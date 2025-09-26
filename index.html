@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chat with V</title>
+    <link rel="stylesheet" href="style.css">
+    <!-- Font Awesome for icons, as used in the CSS -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+</head>
+<body>
+
+    <!-- 1. The Floating Chat Icon Button -->
+    <div class="chat-icon-button"></div>
+
+    <!-- 2. The Main Chat Widget (hidden by default via CSS) -->
+    <div class="chat-widget">
+        <!-- Header -->
+        <div class="chat-header">
+            <div class="header-logo"></div>
+            <div class="header-title"></div>
+            <div class="close-btn">&times;</div>
+        </div>
+
+        <!-- Chat Body (where messages appear) -->
+        <div class="chat-body">
+            <!-- Initial typing indicator -->
+            <div class="message bot-message">
+                <div class="typing-indicator">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                </div>
+            </div>
+            <!-- Container for Quick Actions (will be populated by JS) -->
+            <div class="quick-actions-container"></div>
+        </div>
+
+        <!-- Input Box -->
+        <div class="chat-input-box">
+            <input type="text" placeholder="Type a message...">
+            <button>
+                <i class="fas fa-paper-plane"></i>
+            </button>
+        </div>
+    </div>
+
+    <!-- SCRIPT TAG MOVED HERE: to the end of the body -->
+    <script src="script.js"></script>
+</body>
+</html>
