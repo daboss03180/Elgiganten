@@ -1,53 +1,124 @@
-# This file contains the "knowledge" for the chatbot.
-# For a real-world application, this might connect to a database,
-# a CMS, or a more advanced knowledge retrieval system.
+import os
+import requests
+from typing import List, Dict, Any, Optional
 
-async def lookup_policy(topic: str) -> str:
+# --- Configuration from Environment Variables ---
+SHOPIFY_STORE_URL = os.getenv("SHOPIFY_STORE_URL")
+SHOPIFY_ADMIN_API_TOKEN = os.getenv("SHOPIFY_ADMIN_API_TOKEN")
+API_VERSION = "2023-10"  # Use a recent, stable API version
+
+
+# --- Helper to build headers for Shopify Admin API requests ---
+def _get_admin_api_headers():
+    """Returns the required headers for Shopify Admin API calls."""
+    if not SHOPIFY_ADMIN_API_TOKEN:
+        raise ValueError("SHOPIFY_ADMIN_API_TOKEN is not set in the environment.")
+    return {
+        "X-Shopify-Access-Token": SHOPIFY_ADMIN_API_TOKEN,
+        "Content-Type": "application/json"
+    }
+
+
+# ==============================================================================
+# NEW API-DRIVEN FUNCTIONS
+# ==============================================================================
+
+async def get_shopify_page_by_handle(handle: str) -> Optional[str]:
     """
-    Looks up a store policy. Instead of returning raw HTML,
-    it now returns a clean, concise summary.
+    Fetches a specific page (like a policy) from Shopify by its handle.
+    Returns the HTML content of the page body.
     """
-    topic_lower = topic.lower()
+    if not SHOPIFY_STORE_URL:
+        print("ERROR: SHOPIFY_STORE_URL is not set.")
+        return None
 
-    if topic_lower == "return":
-        # This is the new, short and clean summary.
-        return (
-            "You have 30 days from the date you received your item to request a return. "
-            "To be eligible, the item must be in the same condition you received it, "
-            "unworn or unused, with tags, and in its original packaging. "
-            "You will also need the receipt or proof of purchase."
-        )
-    else:
-        return "I can't find information on that specific policy. I can help with the 'return' policy."
+    # Shopify's Page API doesn't have a direct handle filter, so we fetch all and find the match.
+    url = f"https://{SHOPIFY_STORE_URL}/admin/api/{API_VERSION}/pages.json"
+
+    try:
+        headers = _get_admin_api_headers()
+        response = requests.get(url, headers=headers, timeout=10)
+        response.raise_for_status()
+
+        pages = response.json().get("pages", [])
+        for page in pages:
+            if page.get("handle") == handle:
+                print(f"DEBUG: Found page with handle '{handle}'.")
+                return page.get("body_html", "")  # Return the HTML content
+
+        print(f"WARN: No page found with handle '{handle}'.")
+        return None
+
+    except requests.RequestException as e:
+        print(f"ERROR: Failed to fetch Shopify pages. Details: {e}")
+        return None
 
 
-async def lookup_faq(question: str) -> str:
+async def track_order_in_shopify(order_number: str) -> str:
     """
-    Looks up a frequent question. This is a simplified fallback.
+    Looks up an order in Shopify by its number and returns its fulfillment status.
     """
-    question_lower = question.lower()
+    if not SHOPIFY_STORE_URL:
+        return "I'm sorry, my connection to the store is currently unavailable."
 
-    if "shipping" in question_lower or "leverans" in question_lower:
-        return "We ship to all of Scandinavia. Standard shipping usually takes 3-5 business days."
-    elif "hours" in question_lower or "öppettider" in question_lower:
-        return "Our online store is always open! Customer service is available from 9 AM to 5 PM, Monday to Friday."
-    else:
-        return "I'm not sure how to answer that. Could you try rephrasing? You can also ask to 'connect to a human agent'."
+    # The 'name' field in the API corresponds to the order number (e.g., #1001)
+    url = f"https://{SHOPIFY_STORE_URL}/admin/api/{API_VERSION}/orders.json?name=#{order_number}&status=any"
+
+    try:
+        headers = _get_admin_api_headers()
+        response = requests.get(url, headers=headers, timeout=10)
+        response.raise_for_status()
+
+        orders = response.json().get("orders", [])
+        if not orders:
+            return f"I couldn't find any order with the number #{order_number}. Please double-check the number."
+
+        order = orders[0]
+        fulfillment_status = order.get("fulfillment_status")
+
+        if fulfillment_status is None:
+            return f"Order #{order_number} has been placed, but is not yet fulfilled."
+        elif fulfillment_status == "fulfilled":
+            return f"Great news! Order #{order_number} has been fulfilled and is on its way."
+        elif fulfillment_status == "partial":
+            return f"Good news! Part of your order #{order_number} has been shipped."
+        else:
+            return f"The current status for order #{order_number} is: {fulfillment_status}."
+
+    except requests.RequestException as e:
+        print(f"ERROR: Failed to track order in Shopify. Details: {e}")
+        return "I'm having trouble accessing order information right now. Please try again in a moment."
 
 
-async def fetch_recommendations() -> list:
+async def fetch_shopify_recommendations() -> List[Dict[str, Any]]:
     """
-    Provides a list of products to recommend.
-    In a real application, this could be based on user data or best-sellers.
+    Fetches a few published products from Shopify to use as recommendations.
     """
-    # This is a placeholder list.
-    return [
-        {
-            "title": "Electrolux Flaskhylla M4RHBH02",
-            "product_url": "https://qhyrfq-y1.myshopify.com/products/electrolux-flaskhylla-m4rhbh02"
-        },
-        {
-            "title": "Oral-B iO2 eltandborste 612265 (Calm Pink)",
-            "product_url": "https://qhyrfq-y1.myshopify.com/products/oral-b-io2-eltandborste-612265-calm-pink"
-        }
-    ]
+    if not SHOPIFY_STORE_URL:
+        print("ERROR: SHOPIFY_STORE_URL is not set.")
+        return []
+
+    # Fetches the 3 most recently updated, published products
+    url = f"https://{SHOPIFY_STORE_URL}/admin/api/{API_VERSION}/products.json?status=active&limit=3"
+
+    try:
+        headers = _get_admin_api_headers()
+        response = requests.get(url, headers=headers, timeout=10)
+        response.raise_for_status()
+
+        products_data = response.json().get("products", [])
+
+        recommendations = []
+        for prod in products_data:
+            recommendations.append({
+                "title": prod.get("title"),
+                # The product URL on the storefront
+                "product_url": f"https://{SHOPIFY_STORE_URL}/products/{prod.get('handle')}"
+            })
+
+        print(f"DEBUG: Fetched {len(recommendations)} products for recommendation.")
+        return recommendations
+
+    except requests.RequestException as e:
+        print(f"ERROR: Failed to fetch Shopify products. Details: {e}")
+        return []
