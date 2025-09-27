@@ -5,7 +5,7 @@ from typing import List, Dict, Any, Optional
 # --- Configuration from Environment Variables ---
 SHOPIFY_STORE_URL = os.getenv("SHOPIFY_STORE_URL")
 SHOPIFY_ADMIN_API_TOKEN = os.getenv("SHOPIFY_ADMIN_API_TOKEN")
-API_VERSION = "2023-10"  # Use a recent, stable API version
+API_VERSION = "2023-10"
 
 
 # --- Helper to build headers for Shopify Admin API requests ---
@@ -20,19 +20,18 @@ def _get_admin_api_headers():
 
 
 # ==============================================================================
-# NEW API-DRIVEN FUNCTIONS
+# UPDATED API-DRIVEN FUNCTIONS
 # ==============================================================================
 
-async def get_shopify_page_by_handle(handle: str) -> Optional[str]:
+async def get_shopify_page_by_handle(topic: str) -> Optional[str]:
     """
-    Fetches a specific page (like a policy) from Shopify by its handle.
-    Returns the HTML content of the page body.
+    Fetches a policy page from Shopify.
+    Instead of a fixed handle, it now searches for a page with the topic in its title.
     """
     if not SHOPIFY_STORE_URL:
         print("ERROR: SHOPIFY_STORE_URL is not set.")
         return None
 
-    # Shopify's Page API doesn't have a direct handle filter, so we fetch all and find the match.
     url = f"https://{SHOPIFY_STORE_URL}/admin/api/{API_VERSION}/pages.json"
 
     try:
@@ -41,16 +40,28 @@ async def get_shopify_page_by_handle(handle: str) -> Optional[str]:
         response.raise_for_status()
 
         pages = response.json().get("pages", [])
-        for page in pages:
-            if page.get("handle") == handle:
-                print(f"DEBUG: Found page with handle '{handle}'.")
-                return page.get("body_html", "")  # Return the HTML content
 
-        print(f"WARN: No page found with handle '{handle}'.")
+        # --- NEW: More robust search logic ---
+        print(f"DEBUG: Searching for a page with '{topic}' in the title...")
+
+        # Log all found page titles for easier debugging
+        all_titles = [page.get('title', '').lower() for page in pages]
+        print(f"DEBUG: Available page titles: {all_titles}")
+
+        for page in pages:
+            page_title = page.get("title", "").lower()
+            if topic in page_title:
+                print(f"DEBUG: Match found! Using page titled '{page.get('title')}'.")
+                return page.get("body_html", "")
+
+        print(f"WARN: No page found with '{topic}' in the title.")
         return None
 
     except requests.RequestException as e:
         print(f"ERROR: Failed to fetch Shopify pages. Details: {e}")
+        return None
+    except Exception as e:
+        print(f"ERROR: An unexpected error occurred while fetching pages. {e}")
         return None
 
 
@@ -61,7 +72,6 @@ async def track_order_in_shopify(order_number: str) -> str:
     if not SHOPIFY_STORE_URL:
         return "I'm sorry, my connection to the store is currently unavailable."
 
-    # The 'name' field in the API corresponds to the order number (e.g., #1001)
     url = f"https://{SHOPIFY_STORE_URL}/admin/api/{API_VERSION}/orders.json?name=#{order_number}&status=any"
 
     try:
@@ -98,7 +108,6 @@ async def fetch_shopify_recommendations() -> List[Dict[str, Any]]:
         print("ERROR: SHOPIFY_STORE_URL is not set.")
         return []
 
-    # Fetches the 3 most recently updated, published products
     url = f"https://{SHOPIFY_STORE_URL}/admin/api/{API_VERSION}/products.json?status=active&limit=3"
 
     try:
@@ -112,7 +121,6 @@ async def fetch_shopify_recommendations() -> List[Dict[str, Any]]:
         for prod in products_data:
             recommendations.append({
                 "title": prod.get("title"),
-                # The product URL on the storefront
                 "product_url": f"https://{SHOPIFY_STORE_URL}/products/{prod.get('handle')}"
             })
 
